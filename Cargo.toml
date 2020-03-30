@@ -17,4 +17,4 @@ url = "2.1.1"
 
 [[bin]]
 name = "multiserver-address-rs"
-path = "main.rs"
+path = "src/main.rs"
