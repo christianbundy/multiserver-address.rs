@@ -1,0 +1,20 @@
+[package]
+name = "multiserver-address-rs"
+version = "0.1.0"
+authors = ["Christian Bundy <christianbundy@fraction.io>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+base64 = "0.12.0"
+lazy_static = "1.4.0"
+rand = "0.7.3"
+regex = "1.3.6"
+snafu = "0.6.3"
+ssb-multiformats = "0.1.0"
+url = "2.1.1"
+
+[[bin]]
+name = "multiserver-address-rs"
+path = "main.rs"
