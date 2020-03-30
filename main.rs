@@ -178,7 +178,7 @@ mod tests {
             "@HDOUC17/nBPzbVjT3+nUsLf/4p9lyIChEzMAxrHJQo4=.ed25519"
         );
         match address.address {
-            AddressType::Url(url) => (),
+            AddressType::Url(_url) => (),
             _ => panic!(),
         };
     }
