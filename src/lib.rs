@@ -1,16 +1,16 @@
+extern crate pest;
+#[macro_use]
+extern crate pest_derive;
+
 use base64::{decode, DecodeError};
-use snafu::{ ResultExt, Snafu};
+use pest::iterators::Pair;
+use pest::Parser;
+use snafu::{ResultExt, Snafu};
 use ssb_multiformats::multikey::Multikey;
 use std::net::{AddrParseError, IpAddr};
 use std::num::ParseIntError;
 use std::str::FromStr;
 use url::{ParseError, Url};
-
-extern crate pest;
-#[macro_use]
-extern crate pest_derive;
-
-use pest::Parser;
 
 #[derive(Parser)]
 #[grammar = "address.pest"]
@@ -56,53 +56,56 @@ pub enum Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
+fn parse_address(pair: Pair<Rule>) -> Result<MultiserverAddress> {
+    let mut protocols = pair.into_inner();
+    let mut net = protocols.next().unwrap().into_inner();
+    // TODO: Rename `net_data_1`. Which rule is this? Maybe try:
+    //   println("{:?}", net_data_1.as_rule());
+    let mut net_data_1 = net.next().unwrap().into_inner();
+    let _net_name = net_data_1.next().unwrap();
+    let mut net_data = net_data_1.next().unwrap().into_inner();
+    let net_host = net_data.next().unwrap();
+    let net_host_inner = net_host.into_inner().next().unwrap();
+    let net_port = net_data.next().unwrap();
+
+    let mut shs = net.next().unwrap().into_inner();
+    let _shs_name = shs.next().unwrap();
+    let shs_data = shs.next().unwrap();
+
+    let pub_key_str = shs_data.as_str();
+    let pub_key_vec = decode(pub_key_str).context(PubKeyNotBase64)?;
+    let pub_key_bytes = array_32_from_vec(pub_key_vec);
+    let pub_key = Multikey::from_ed25519(&pub_key_bytes);
+
+    let port = u16::from_str(net_port.as_str()).unwrap();
+    let address;
+
+    if net_host_inner.as_rule() == Rule::domain_host {
+        let url_str = format!("tcp://{}", net_host_inner.as_str());
+        let url = Url::parse(&url_str).unwrap();
+        address = AddressType::Url(url);
+    } else {
+        address = AddressType::Ip(net_host_inner.as_str().parse().unwrap());
+    }
+
+    Ok(MultiserverAddress {
+        address,
+        port,
+        pub_key: Some(pub_key),
+    })
+}
+
 impl FromStr for MultiserverAddress {
     type Err = Error;
 
     fn from_str(st: &str) -> Result<MultiserverAddress> {
         // TODO: Correct variable names below to match grammar
         let multiaddress = AddressParser::parse(Rule::net_multiaddress, st)
-            .unwrap_or_else(|e| panic!("{}", e))
+            .unwrap()
             .next()
             .unwrap();
 
-        let mut protocols = multiaddress.into_inner();
-        let mut net = protocols.next().unwrap().into_inner();
-        // TODO: Rename `net_data_1`. Which rule is this? Maybe try:
-        //   println("{:?}", net_data_1.as_rule());
-        let mut net_data_1 = net.next().unwrap().into_inner();
-        let _net_name = net_data_1.next().unwrap();
-        let mut net_data = net_data_1.next().unwrap().into_inner();
-        let net_host = net_data.next().unwrap();
-        let net_host_inner = net_host.into_inner().next().unwrap();
-        let net_port = net_data.next().unwrap();
-
-        let mut shs = net.next().unwrap().into_inner();
-        let _shs_name = shs.next().unwrap();
-        let shs_data = shs.next().unwrap();
-
-        let pub_key_str = shs_data.as_str();
-        let pub_key_vec = decode(pub_key_str).context(PubKeyNotBase64)?;
-        let pub_key_bytes = array_32_from_vec(pub_key_vec);
-        let pub_key = Multikey::from_ed25519(&pub_key_bytes);
-
-        // TODO: Fix this monstrosity.
-        let port = u16::from_str_radix(net_port.as_str(), 10).unwrap();
-        let address;
-
-        if net_host_inner.as_rule() == Rule::domain_host {
-            let mut url = Url::parse("tcp://example.com").unwrap();
-            let _host_result = url.set_host(Some(net_host_inner.as_str()));
-            address = AddressType::Url(url);
-        } else {
-            address = AddressType::Ip(net_host_inner.as_str().parse().unwrap());
-        }
-
-        Ok(MultiserverAddress {
-            address,
-            port,
-            pub_key: Some(pub_key),
-        })
+        parse_address(multiaddress)
     }
 }
 
