@@ -101,7 +101,7 @@ impl FromStr for MultiserverAddress {
     fn from_str(st: &str) -> Result<MultiserverAddress> {
         // TODO: Correct variable names below to match grammar
         let multiaddress = AddressParser::parse(Rule::net_multiaddress, st)
-            .unwrap()
+            .unwrap_or_else(|e| panic!("{}", e))
             .next()
             .unwrap();
 
