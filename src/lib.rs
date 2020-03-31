@@ -1,12 +1,20 @@
 use base64::{decode, DecodeError};
-use lazy_static::lazy_static;
-use regex::Regex;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{ ResultExt, Snafu};
 use ssb_multiformats::multikey::Multikey;
 use std::net::{AddrParseError, IpAddr};
 use std::num::ParseIntError;
 use std::str::FromStr;
 use url::{ParseError, Url};
+
+extern crate pest;
+#[macro_use]
+extern crate pest_derive;
+
+use pest::Parser;
+
+#[derive(Parser)]
+#[grammar = "address.pest"]
+struct AddressParser;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AddressType {
@@ -52,40 +60,43 @@ impl FromStr for MultiserverAddress {
     type Err = Error;
 
     fn from_str(st: &str) -> Result<MultiserverAddress> {
-        lazy_static! {
-            static ref RE: Regex = Regex::new(r"net:((?P<ipv4>\d+.\d+.\d+.\d+)|(?P<ipv6>.+:.+:.+:.+:.+:.+:.+:.+)|(?P<url>.+)):(?P<port>\d+)~\w+:(?P<pub_key>.+=)").unwrap();
-        }
-        let caps = RE.captures(st).context(Parse)?;
+        // TODO: Correct variable names below to match grammar
+        let multiaddress = AddressParser::parse(Rule::net_multiaddress, st)
+            .unwrap_or_else(|e| panic!("{}", e))
+            .next()
+            .unwrap();
 
-        let ip_str = caps.name("ipv4").or_else(|| caps.name("ipv6"));
+        let mut protocols = multiaddress.into_inner();
+        let mut net = protocols.next().unwrap().into_inner();
+        // TODO: Rename `net_data_1`. Which rule is this? Maybe try:
+        //   println("{:?}", net_data_1.as_rule());
+        let mut net_data_1 = net.next().unwrap().into_inner();
+        let _net_name = net_data_1.next().unwrap();
+        let mut net_data = net_data_1.next().unwrap().into_inner();
+        let net_host = net_data.next().unwrap();
+        let net_host_inner = net_host.into_inner().next().unwrap();
+        let net_port = net_data.next().unwrap();
 
-        let url_str = caps.name("url");
+        let mut shs = net.next().unwrap().into_inner();
+        let _shs_name = shs.next().unwrap();
+        let shs_data = shs.next().unwrap();
 
-        let pub_key_str = caps.name("pub_key").context(NoPubKeyString)?.as_str();
-        let port_str = caps.name("port").context(NoPortString)?.as_str();
-
+        let pub_key_str = shs_data.as_str();
         let pub_key_vec = decode(pub_key_str).context(PubKeyNotBase64)?;
         let pub_key_bytes = array_32_from_vec(pub_key_vec);
-
         let pub_key = Multikey::from_ed25519(&pub_key_bytes);
 
-        let address = match (ip_str, url_str) {
-            (Some(ip_str), None) => IpAddr::from_str(ip_str.as_str())
-                .map(AddressType::Ip)
-                .context(IpInvalid),
-            (None, Some(url_str)) => {
-                let options = Url::options();
-                let tcp_base = Url::parse("tcp://").unwrap();
-                let base_url = options.base_url(Some(&tcp_base));
-                base_url
-                    .parse(url_str.as_str())
-                    .map(AddressType::Url)
-                    .context(UrlInvalid)
-            }
-            _ => return Err(Error::NoAddressString {}),
-        }?;
+        // TODO: Fix this monstrosity.
+        let port = u16::from_str_radix(net_port.as_str(), 10).unwrap();
+        let address;
 
-        let port = u16::from_str(port_str).context(PortNotNumeric)?;
+        if net_host_inner.as_rule() == Rule::domain_host {
+            let mut url = Url::parse("tcp://example.com").unwrap();
+            let _host_result = url.set_host(Some(net_host_inner.as_str()));
+            address = AddressType::Url(url);
+        } else {
+            address = AddressType::Ip(net_host_inner.as_str().parse().unwrap());
+        }
 
         Ok(MultiserverAddress {
             address,
