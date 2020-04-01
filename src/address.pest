@@ -1,0 +1,21 @@
+// Basic Multiserver grammar.
+name = { ( ASCII_ALPHA_LOWER | ASCII_DIGIT | "-" ) + }
+// TODO: Implement escape character.
+special = { ( "!" | ";" | "~" ) }
+data = { (! (WHITE_SPACE | special ) ~ ANY ) + }
+protocol = { name ~ ":" ~ data*}
+address = { protocol ~ ("~" ~ protocol) * }
+multiaddress = { address ~ ( ";" ~ address ) * }
+
+// Protocol: net
+ipv4_host = { ASCII_DIGIT{1,3} ~ ("." ~ ASCII_DIGIT {1,3} ) {3} }
+ipv6_host = { ASCII_HEX_DIGIT{1,4} ~ (":" ~ ASCII_HEX_DIGIT {0,4} ) {,7} }
+domain_host = { ( ASCII_ALPHANUMERIC | "." ) + }
+
+net_host = { ( ipv4_host | ipv6_host |  domain_host ) }
+net_port = { ASCII_DIGIT+ }
+net_name = { "net" }
+net_data = { net_host ~ ":" ~ net_port }
+net_protocol = { net_name ~ ":" ~ net_data }
+net_address = { net_protocol ~ ("~" ~ protocol) * }
+net_multiaddress = { net_address ~ ( ";" ~ net_address ) * }
